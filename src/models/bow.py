@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.keras import layers, optimizers, regularizers
-from sklearn.base import BaseEstimator, ClassifierMixin
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.feature_extraction.text import CountVectorizer
 

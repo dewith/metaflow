@@ -7,8 +7,8 @@ class NLPFlow(FlowSpec):
     def start(self):
         "Read the data"
         import pandas as pd
-        self.df = pd.read_parquet('train.parquet')
-        self.valdf = pd.read_parquet('valid.parquet')
+        self.df = pd.read_parquet("../data/train.parquet")
+        self.valdf = pd.read_parquet("../data/valid.parquet")
         print(f'num of rows: {self.df.shape[0]}')
         self.next(self.baseline, self.train)
 
@@ -26,24 +26,42 @@ class NLPFlow(FlowSpec):
     @step
     def train(self):
         "Train the model"
-        from model import NbowModel
+        import pickle
+        from models.bow import NbowModel
         model = NbowModel(vocab_sz=750)
         model.fit(X=self.df['review'], y=self.df['labels'])
-        self.model_dict = model.model_dict #save model
+        self.model_dict = model.model_dict
+        with open('../data/04_models/nbow_model_state.pkl', 'wb') as f:
+            pickle.dump(self.model_dict , f)
         self.next(self.join)
         
     @step
     def join(self, inputs):
         "Compare the model results with the baseline."
-        import pandas as pd
-        from model import NbowModel
+        print('Importing libraries')
+        from models.bow import NbowModel
+        
+        print('Loading model')
         self.model_dict = inputs.train.model_dict
+        model = NbowModel.from_dict(self.model_dict)
+        
+        print('Loading data')
         self.train_df = inputs.train.df
         self.val_df = inputs.baseline.valdf
         self.base_rocauc = inputs.baseline.base_rocauc
         self.base_acc = inputs.baseline.base_acc
-        model = NbowModel.from_dict(self.model_dict)
         
+        # print('Testing if model works')
+        # print('Predicting:', self.val_df['review'].iloc[[0]])
+        # pred = model.predict(self.val_df['review'].iloc[[0]])
+        # print('Actual:', self.val_df['labels'].iloc[0])
+        # print('Predicted:', pred)
+        # if pred == self.val_df['labels'].iloc[0]:
+        #     print('Model works')
+        # else:
+        #     print('Model does not work')
+            
+        print('Evaluating model')
         self.model_acc = model.eval_acc(
             X=self.val_df['review'], labels=self.val_df['labels'])
         self.model_rocauc = model.eval_rocauc(
@@ -59,8 +77,10 @@ class NLPFlow(FlowSpec):
     def end(self):
         """Tags model as a deployment candidate
            if it beats the baseline and passes smoke tests."""
-        from model import NbowModel
+        from models.bow import NbowModel
+        print('Loading model...')
         model = NbowModel.from_dict(self.model_dict)
+        print('Loaded model.')
         
         self.beats_baseline = self.model_rocauc > self.base_rocauc
         print(f'Model beats baseline (T/F): {self.beats_baseline}')

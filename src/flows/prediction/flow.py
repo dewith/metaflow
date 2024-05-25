@@ -20,11 +20,11 @@ class NLPPredictionFlow(FlowSpec):
     @step
     def end(self):
         "Make predictions"
-        from model import NbowModel
+        from models.bow import NbowModel
         import pandas as pd
         import pyarrow as pa
         new_reviews = pd.read_parquet(
-            'predict.parquet')['review']
+            '../data/predict.parquet')['review']
         
         # Make predictions
         model = NbowModel.from_dict(
