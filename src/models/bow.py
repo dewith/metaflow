@@ -1,19 +1,22 @@
 """Bag of Words model """
 
 import torch
-import torch.nn as nn
-import torch.optim as optim
+from torch import nn, optim
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.feature_extraction.text import CountVectorizer
-from torch.utils.data import DataLoader, TensorDataset
 
 
 class NbowModel(nn.Module):
-    """Neural Bag of Words model """
+    """Neural Bag of Words model"""
+
+    # pylint: disable=too-many-instance-attributes
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-locals
 
     def __init__(self, vocab_sz):
         """Instantiate the model"""
-        super(NbowModel, self).__init__()
+        super().__init__()
         self.vocab_sz = vocab_sz
         # Instantiate the CountVectorizer
         self.cv = CountVectorizer(
@@ -44,20 +47,27 @@ class NbowModel(nn.Module):
         x = self.sigmoid(x)
         return x, l1_penalty, l2_penalty
 
-    def fit(self, X, y, epochs=10, batch_size=32, validation_split=0.2, lr=0.002):
+    def fit(
+        self, x, y, epochs=10, batch_size=32, validation_split=0.2, lr=0.002
+    ):
         """Fit the model"""
-        res = self.cv.fit_transform(X).toarray()
-        dataset = TensorDataset(torch.tensor(
-            res, dtype=torch.float32), torch.tensor(y, dtype=torch.float32))
+        res = self.cv.fit_transform(x).toarray()
+        dataset = TensorDataset(
+            torch.tensor(res, dtype=torch.float32),
+            torch.tensor(y, dtype=torch.float32),
+        )
         val_size = int(validation_split * len(dataset))
         train_size = len(dataset) - val_size
         train_dataset, val_dataset = torch.utils.data.random_split(
-            dataset, [train_size, val_size])
+            dataset, [train_size, val_size]
+        )
 
         train_loader = DataLoader(
-            train_dataset, batch_size=batch_size, shuffle=True)
+            train_dataset, batch_size=batch_size, shuffle=True
+        )
         val_loader = DataLoader(
-            val_dataset, batch_size=batch_size, shuffle=False)
+            val_dataset, batch_size=batch_size, shuffle=False
+        )
 
         criterion = nn.BCELoss()
         optimizer = optim.Adam(self.parameters(), lr=lr)
@@ -68,8 +78,11 @@ class NbowModel(nn.Module):
             for inputs, labels in train_loader:
                 optimizer.zero_grad()
                 outputs, l1_penalty, l2_penalty = self.forward(inputs)
-                loss = criterion(outputs.squeeze(), labels) + \
-                    l1_penalty + l2_penalty
+                loss = (
+                    criterion(outputs.squeeze(), labels)
+                    + l1_penalty
+                    + l2_penalty
+                )
                 loss.backward()
                 optimizer.step()
                 train_loss += loss.item()
@@ -83,27 +96,26 @@ class NbowModel(nn.Module):
                     val_loss += loss.item()
 
             print(
-                f'Epoch {epoch+1}/{epochs} |'
-                f'Train loss: {train_loss/len(train_loader):.4f} - '
-                f'Val loss: {val_loss/len(val_loader):.4f}'
+                f"Epoch {epoch+1}/{epochs} |"
+                f"Train loss: {train_loss/len(train_loader):.4f} - "
+                f"Val loss: {val_loss/len(val_loader):.4f}"
             )
 
-    def predict(self, X):
-        """Predict the class probabilities of X"""
-        res = self.cv.transform(X).toarray()
+    def predict(self, x):
+        """Predict the class probabilities of x"""
+        res = self.cv.transform(x).toarray()
         self.eval()
         with torch.no_grad():
-            outputs, _, _ = self.forward(
-                torch.tensor(res, dtype=torch.float32))
+            outputs, _, _ = self.forward(torch.tensor(res, dtype=torch.float32))
         return outputs.squeeze().numpy()
 
-    def eval_acc(self, X, labels, threshold=0.5):
+    def eval_acc(self, x, labels, threshold=0.5):
         """Evaluate the accuracy of the model"""
-        return accuracy_score(labels, self.predict(X) > threshold)
+        return accuracy_score(labels, self.predict(x) > threshold)
 
-    def eval_rocauc(self, X, labels):
+    def eval_rocauc(self, x, labels):
         """Evaluate the ROC AUC of the model"""
-        return roc_auc_score(labels, self.predict(X))
+        return roc_auc_score(labels, self.predict(x))
 
     @property
     def model_dict(self):
