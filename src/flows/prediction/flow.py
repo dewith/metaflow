@@ -1,40 +1,44 @@
+""""Make batch predictions on new data"""
 
 from metaflow import FlowSpec, step, Flow, current
+from pathlib import Path
+
 
 class NLPPredictionFlow(FlowSpec):
-    
-    def get_latest_successful_run(self, flow_nm, tag):
-        """Gets the latest successful run 
-            for a flow with a specific tag."""
-        for r in Flow(flow_nm).runs(tag):
-            if r.successful: return r
-        
+    """Make batch predictions on new data"""
+
+    outputs_dir = Path('../data/05_outputs')
+
     @step
     def start(self):
-        """Get the latest deployment candidate 
-            that is from a successfull run"""
-        self.deploy_run = self.get_latest_successful_run(
+        """Get the latest deployment candidate that is from a successfull run"""
+        from utils.runs import get_latest_successful_run
+        print('Loading data of NLPFlow last run')
+        self.deploy_run = get_latest_successful_run(
             'NLPFlow', 'deployment_candidate')
         self.next(self.end)
-    
+
     @step
     def end(self):
         "Make predictions"
         from models.bow import NbowModel
         import pandas as pd
         import pyarrow as pa
+
+        print('Loading data to predict')
         new_reviews = pd.read_parquet(
-            '../data/predict.parquet')['review']
-        
-        # Make predictions
+            self.outputs_dir / 'predict.parquet')['review']
+
+        print('Loading model and making predictions')
         model = NbowModel.from_dict(
             self.deploy_run.data.model_dict)
         predictions = model.predict(new_reviews)
-        msg = 'Writing predictions to parquet: {} rows'
-        print(msg.format(predictions.shape[0]))
-        pa_tbl = pa.table({"data": predictions.squeeze()})
-        pa.parquet.write_table(
-            pa_tbl, "sentiment_predictions.parquet")
         
+        print(f'Writing predictions to parquet: {predictions.shape[0]} rows')
+        table = pa.table({"data": predictions})
+        filename = self.outputs_dir / "sentiment_predictions.parquet"
+        pa.parquet.write_table(table, filename)
+
+
 if __name__ == '__main__':
     NLPPredictionFlow()

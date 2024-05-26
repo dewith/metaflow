@@ -1,11 +1,19 @@
-import tensorflow as tf
-from tensorflow.keras import layers, optimizers, regularizers
+"""Bag of Words model """
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.feature_extraction.text import CountVectorizer
+from torch.utils.data import DataLoader, TensorDataset
 
 
-class NbowModel:
+class NbowModel(nn.Module):
+    """Neural Bag of Words model """
+
     def __init__(self, vocab_sz):
+        """Instantiate the model"""
+        super(NbowModel, self).__init__()
         self.vocab_sz = vocab_sz
         # Instantiate the CountVectorizer
         self.cv = CountVectorizer(
@@ -16,46 +24,96 @@ class NbowModel:
             max_features=self.vocab_sz,
         )
 
-        # Define the keras model
-        inputs = tf.keras.Input(shape=(self.vocab_sz,), name="Input")
-        x = layers.Dropout(0.10)(inputs)
-        x = layers.Dense(
-            15,
-            activation="relu",
-            kernel_regularizer=regularizers.L1L2(l1=1e-5, l2=1e-4),
-        )(x)
-        predictions = layers.Dense(
-            1,
-            activation="sigmoid",
-        )(x)
-        self.model = tf.keras.Model(inputs, predictions)
-        opt = optimizers.Adam(learning_rate=0.002)
-        self.model.compile(
-            loss="binary_crossentropy", optimizer=opt, metrics=["accuracy"]
-        )
+        # Define the PyTorch model
+        self.dropout = nn.Dropout(0.10)
+        self.dense1 = nn.Linear(self.vocab_sz, 15)
+        self.relu = nn.ReLU()
+        self.dense2 = nn.Linear(15, 1)
+        self.sigmoid = nn.Sigmoid()
+        self.l1 = 1e-5
+        self.l2 = 1e-4
 
-    def fit(self, X, y):
+    def forward(self, x):
+        """Forward pass"""
+        x = self.dropout(x)
+        x = self.dense1(x)
+        l1_penalty = self.l1 * torch.norm(self.dense1.weight, 1)
+        l2_penalty = self.l2 * torch.norm(self.dense1.weight, 2)
+        x = self.relu(x)
+        x = self.dense2(x)
+        x = self.sigmoid(x)
+        return x, l1_penalty, l2_penalty
+
+    def fit(self, X, y, epochs=10, batch_size=32, validation_split=0.2, lr=0.002):
+        """Fit the model"""
         res = self.cv.fit_transform(X).toarray()
-        self.model.fit(x=res, y=y, batch_size=32, epochs=10, validation_split=0.2)
+        dataset = TensorDataset(torch.tensor(
+            res, dtype=torch.float32), torch.tensor(y, dtype=torch.float32))
+        val_size = int(validation_split * len(dataset))
+        train_size = len(dataset) - val_size
+        train_dataset, val_dataset = torch.utils.data.random_split(
+            dataset, [train_size, val_size])
+
+        train_loader = DataLoader(
+            train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = DataLoader(
+            val_dataset, batch_size=batch_size, shuffle=False)
+
+        criterion = nn.BCELoss()
+        optimizer = optim.Adam(self.parameters(), lr=lr)
+
+        for epoch in range(epochs):
+            self.train()
+            train_loss = 0.0
+            for inputs, labels in train_loader:
+                optimizer.zero_grad()
+                outputs, l1_penalty, l2_penalty = self.forward(inputs)
+                loss = criterion(outputs.squeeze(), labels) + \
+                    l1_penalty + l2_penalty
+                loss.backward()
+                optimizer.step()
+                train_loss += loss.item()
+
+            self.eval()
+            val_loss = 0.0
+            with torch.no_grad():
+                for inputs, labels in val_loader:
+                    outputs, _, _ = self.forward(inputs)
+                    loss = criterion(outputs.squeeze(), labels)
+                    val_loss += loss.item()
+
+            print(
+                f'Epoch {epoch+1}/{epochs} |'
+                f'Train loss: {train_loss/len(train_loader):.4f} - '
+                f'Val loss: {val_loss/len(val_loader):.4f}'
+            )
 
     def predict(self, X):
+        """Predict the class probabilities of X"""
         res = self.cv.transform(X).toarray()
-        return self.model.predict(res)
+        self.eval()
+        with torch.no_grad():
+            outputs, _, _ = self.forward(
+                torch.tensor(res, dtype=torch.float32))
+        return outputs.squeeze().numpy()
 
     def eval_acc(self, X, labels, threshold=0.5):
+        """Evaluate the accuracy of the model"""
         return accuracy_score(labels, self.predict(X) > threshold)
 
     def eval_rocauc(self, X, labels):
+        """Evaluate the ROC AUC of the model"""
         return roc_auc_score(labels, self.predict(X))
 
     @property
     def model_dict(self):
-        return {"vectorizer": self.cv, "model": self.model}
+        """Get model dictionary"""
+        return {"vectorizer": self.cv, "model_state_dict": self.state_dict()}
 
     @classmethod
     def from_dict(cls, model_dict):
-        "Get Model from dictionary"
+        """Load model from dictionary"""
         nbow_model = cls(len(model_dict["vectorizer"].vocabulary_))
-        nbow_model.model = model_dict["model"]
+        nbow_model.load_state_dict(model_dict["model_state_dict"])
         nbow_model.cv = model_dict["vectorizer"]
         return nbow_model
