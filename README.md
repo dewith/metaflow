@@ -1,7 +1,7 @@
 🎭 Sentiment Analysis with Metaflow
 ================
 
-This repository contains following the [Natural Language Processing with Metaflow tutorial](https://outerbounds.com/docs/nlp-tutorial-overview/).
+This repository contains code following the [Natural Language Processing with Metaflow](https://outerbounds.com/docs/nlp-tutorial-overview/) tutorial.
 
 I've made some changes to the original tutorial to make it more readable, organized and robust.
 
